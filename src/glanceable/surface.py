@@ -90,8 +90,18 @@ class PILSurface(Surface):
 
 @dataclass
 class SpriteOp:
-    """One TxSprite-shaped payload. Field names mirror brilliant_msg.TxSprite
-    so this can be handed straight to it."""
+    """One accumulated draw: a pixel payload plus where it goes.
+
+    This maps to *two* messages in brilliant_msg 7.0.0, not one. TxSprite
+    carries the pixels and has no position of its own; placement is a separate
+    TxSpriteCoords keyed by `code`. Splatting this dataclass into TxSprite
+    raises TypeError on `x`. Use `sprite_kwargs()` and `coords_kwargs()`.
+
+    Deliberately imports nothing from brilliant_msg. Keeping the device SDK out
+    of the library is exactly what rule 1 in CLAUDE.md protects: the moment
+    this module imports a vendor package, PILSurface and SpriteSurface stop
+    being interchangeable and the boundary rots.
+    """
 
     width: int
     height: int
@@ -100,21 +110,56 @@ class SpriteOp:
     pixel_data: bytes
     x: int
     y: int
+    code: int = 0
+    compress: bool = False
+    offset: int = 0
+
+    def sprite_kwargs(self) -> dict:
+        """Exactly the constructor fields of brilliant_msg.TxSprite."""
+        return {
+            "width": self.width,
+            "height": self.height,
+            "num_colors": self.num_colors,
+            "palette_data": self.palette_data,
+            "pixel_data": self.pixel_data,
+            "compress": self.compress,
+        }
+
+    def coords_kwargs(self) -> dict:
+        """Exactly the constructor fields of brilliant_msg.TxSpriteCoords.
+
+        UNCONFIRMED: x/y are emitted 0-based, matching this library's geometry.
+        The SDK documents them as 1-based (1..640 -- Frame's panel again, the
+        same stale bound as TxPlainText). A one-pixel origin shift will not be
+        settled by reading the SDK; it needs a physical Halo.
+        """
+        return {"code": self.code, "x": self.x, "y": self.y, "offset": self.offset}
 
 
 class SpriteSurface(Surface):
-    """Accumulates ops as TxSprite-compatible payloads for the real device.
+    """Accumulates ops as TxSprite/TxSpriteCoords payloads for the real device.
 
-    NOTE: emitted against the published brilliant_msg 7.0.0 shapes but NOT yet
-    validated on hardware. Treat the wire format as unconfirmed until it has
-    been round-tripped on a physical Halo.
+    Each op becomes two messages on the wire. `base_code` seeds the per-sprite
+    identifier that binds a pixel payload to its placement; codes are unsigned
+    bytes, so they wrap at 256. Which codes are safe to use is the application's
+    business -- the SDK does not reserve a range.
+
+    NOTE: field shapes are checked against the published brilliant_msg 7.0.0
+    classes, but this has NOT been run on hardware. Treat the wire format as
+    unconfirmed until it has been round-tripped on a physical Halo.
     """
 
-    def __init__(self, width: int, height: int, palette: list[int]):
+    def __init__(
+        self, width: int, height: int, palette: list[int], base_code: int = 0x20
+    ):
         self._size = (width, height)
         self._palette = bytes(palette)
         self._num_colors = max(2, len(palette) // 3)
+        self._base_code = base_code
         self.ops: list[SpriteOp] = []
+
+    def _next_code(self) -> int:
+        return (self._base_code + len(self.ops)) & 0xFF
 
     @property
     def size(self) -> tuple[int, int]:
@@ -124,7 +169,16 @@ class SpriteSurface(Surface):
         if w <= 0 or h <= 0:
             return
         self.ops.append(
-            SpriteOp(w, h, self._num_colors, self._palette, bytes([color_index] * (w * h)), x, y)
+            SpriteOp(
+                w,
+                h,
+                self._num_colors,
+                self._palette,
+                bytes([color_index] * (w * h)),
+                x,
+                y,
+                code=self._next_code(),
+            )
         )
 
     def blit_coverage(
@@ -141,6 +195,7 @@ class SpriteSurface(Surface):
                 bytes(idx.tobytes()),
                 x,
                 y,
+                code=self._next_code(),
             )
         )
 

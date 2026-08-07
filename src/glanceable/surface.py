@@ -89,18 +89,12 @@ class PILSurface(Surface):
 
 
 @dataclass
-class SpriteOp:
-    """One accumulated draw: a pixel payload plus where it goes.
+class SpritePayload:
+    """The pixels. Field-for-field brilliant_msg.TxSprite, so
 
-    This maps to *two* messages in brilliant_msg 7.0.0, not one. TxSprite
-    carries the pixels and has no position of its own; placement is a separate
-    TxSpriteCoords keyed by `code`. Splatting this dataclass into TxSprite
-    raises TypeError on `x`. Use `sprite_kwargs()` and `coords_kwargs()`.
+        TxSprite(**dataclasses.asdict(payload))
 
-    Deliberately imports nothing from brilliant_msg. Keeping the device SDK out
-    of the library is exactly what rule 1 in CLAUDE.md protects: the moment
-    this module imports a vendor package, PILSurface and SpriteSurface stop
-    being interchangeable and the boundary rots.
+    constructs without translation. Carries no position: TxSprite has none.
     """
 
     width: int
@@ -108,32 +102,66 @@ class SpriteOp:
     num_colors: int
     palette_data: bytes
     pixel_data: bytes
+    compress: bool = False
+
+
+@dataclass
+class SpriteCoords:
+    """The placement. Field-for-field brilliant_msg.TxSpriteCoords.
+
+    `code` binds this to its payload; it is an unsigned byte. `offset` is a
+    palette offset in 0..15.
+
+    UNCONFIRMED: x/y are emitted 0-based, matching this library's geometry,
+    while the SDK documents 1..640 -- Frame's panel again, the same stale bound
+    as TxPlainText. A one-pixel origin shift will not be settled by reading the
+    SDK; it needs a physical Halo.
+    """
+
+    code: int
     x: int
     y: int
-    code: int = 0
-    compress: bool = False
     offset: int = 0
 
-    def sprite_kwargs(self) -> dict:
-        """Exactly the constructor fields of brilliant_msg.TxSprite."""
-        return {
-            "width": self.width,
-            "height": self.height,
-            "num_colors": self.num_colors,
-            "palette_data": self.palette_data,
-            "pixel_data": self.pixel_data,
-            "compress": self.compress,
-        }
 
-    def coords_kwargs(self) -> dict:
-        """Exactly the constructor fields of brilliant_msg.TxSpriteCoords.
+@dataclass
+class SpriteOp:
+    """One accumulated draw, which is *two* messages on the wire.
 
-        UNCONFIRMED: x/y are emitted 0-based, matching this library's geometry.
-        The SDK documents them as 1-based (1..640 -- Frame's panel again, the
-        same stale bound as TxPlainText). A one-pixel origin shift will not be
-        settled by reading the SDK; it needs a physical Halo.
-        """
-        return {"code": self.code, "x": self.x, "y": self.y, "offset": self.offset}
+    brilliant_msg 7.0.0 splits pixels from placement: TxSprite has no x/y, and
+    TxSpriteCoords positions it by `code`. Emitting a single flat struct was
+    wrong -- splatting it into TxSprite raised TypeError on `x`.
+
+    Deliberately imports nothing from brilliant_msg. Keeping the device SDK out
+    of the library is exactly what rule 1 in CLAUDE.md protects: the moment
+    this module imports a vendor package, PILSurface and SpriteSurface stop
+    being interchangeable and the boundary rots.
+    """
+
+    payload: SpritePayload
+    coords: SpriteCoords
+
+    # Passthroughs. The op log has to stay comparable against PILSurface's
+    # (x, y, w, h) tuples or the surface-agreement test loses its teeth.
+    @property
+    def x(self) -> int:
+        return self.coords.x
+
+    @property
+    def y(self) -> int:
+        return self.coords.y
+
+    @property
+    def width(self) -> int:
+        return self.payload.width
+
+    @property
+    def height(self) -> int:
+        return self.payload.height
+
+    @property
+    def code(self) -> int:
+        return self.coords.code
 
 
 class SpriteSurface(Surface):
@@ -161,6 +189,28 @@ class SpriteSurface(Surface):
     def _next_code(self) -> int:
         return (self._base_code + len(self.ops)) & 0xFF
 
+    def _emit(self, w: int, h: int, pixels: bytes, x: int, y: int) -> None:
+        self.ops.append(
+            SpriteOp(
+                payload=SpritePayload(
+                    width=w,
+                    height=h,
+                    num_colors=self._num_colors,
+                    palette_data=self._palette,
+                    pixel_data=pixels,
+                ),
+                coords=SpriteCoords(code=self._next_code(), x=x, y=y),
+            )
+        )
+
+    def messages(self) -> list[tuple[SpritePayload, SpriteCoords]]:
+        """The frame as (pixels, placement) pairs, in draw order.
+
+        Send each pair as two messages; the payload must reach the device
+        before the coords that position it.
+        """
+        return [(op.payload, op.coords) for op in self.ops]
+
     @property
     def size(self) -> tuple[int, int]:
         return self._size
@@ -168,36 +218,14 @@ class SpriteSurface(Surface):
     def fill_rect(self, x: int, y: int, w: int, h: int, color_index: int) -> None:
         if w <= 0 or h <= 0:
             return
-        self.ops.append(
-            SpriteOp(
-                w,
-                h,
-                self._num_colors,
-                self._palette,
-                bytes([color_index] * (w * h)),
-                x,
-                y,
-                code=self._next_code(),
-            )
-        )
+        self._emit(w, h, bytes([color_index] * (w * h)), x, y)
 
     def blit_coverage(
         self, coverage: Image.Image, x: int, y: int, palette_base: int, levels: int
     ) -> None:
         step = 255 / (levels - 1)
         idx = coverage.point(lambda p: palette_base + min(levels - 1, int(round(p / step))))
-        self.ops.append(
-            SpriteOp(
-                coverage.width,
-                coverage.height,
-                self._num_colors,
-                self._palette,
-                bytes(idx.tobytes()),
-                x,
-                y,
-                code=self._next_code(),
-            )
-        )
+        self._emit(coverage.width, coverage.height, bytes(idx.tobytes()), x, y)
 
     def present(self) -> None:
         pass

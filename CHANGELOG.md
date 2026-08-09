@@ -3,7 +3,7 @@
 ## 0.2.0 — unreleased
 
 `glanceable.markdown`: markdown → circular display. Still host-side only;
-**never run on hardware.** 198 tests pass on Python 3.10, 3.12 and 3.14.
+**never run on hardware.** 235 tests pass on Python 3.10, 3.12 and 3.14.
 
 ### Added
 - `parse_markdown(source, policy) -> MarkdownDoc` — pure, needs no font or

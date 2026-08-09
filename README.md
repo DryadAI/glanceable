@@ -49,7 +49,7 @@ the midpoint is the intuitive move and it clips descenders near the poles.
 
 ```bash
 pip install -e ".[dev]"
-pytest -q                      # 198 passed
+pytest -q                      # 235 passed
 python examples/compare.py     # regenerates docs/comparison.png
 ```
 
@@ -134,7 +134,7 @@ guarantee over every one of them.
 ## Status — v0.2, **never run on hardware**
 
 Stated plainly because the point of this project is being the implementation
-you can trust. 198 tests pass on Python 3.10, 3.12 and 3.14. All of them are
+you can trust. 235 tests pass on Python 3.10, 3.12 and 3.14. All of them are
 host-side; none of them is a device.
 
 - **The device-agnostic boundary is untested.** `PILSurface` and `SpriteSurface`

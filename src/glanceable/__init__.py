@@ -8,7 +8,12 @@ from .surface import (
 from .render import render_text, HALO
 from .fonts import find_system_font
 
-__version__ = "0.1.0"
+# glanceable.markdown is NOT imported here. It needs the optional `markdown`
+# extra, and importing it eagerly would turn a missing optional dependency into
+# an ImportError on `import glanceable`. Reach it as:
+#     from glanceable.markdown import layout_markdown
+
+__version__ = "0.2.0"
 __all__ = [
     "CircularDisplay", "Font", "FontLoadError", "GlyphRun", "Layout", "ramp_palette",
     "Surface", "PILSurface", "SpriteSurface", "SpriteOp", "SpritePayload",

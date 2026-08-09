@@ -10,6 +10,6 @@ A layout and typography engine for round, glanceable near-eye displays.
 | Something broke | [Troubleshooting](troubleshooting.md) |
 | Contributing (human or AI) | [../CLAUDE.md](../CLAUDE.md) |
 
-**Status: v0.1, never run on hardware.** The host-side engine is tested
-(20 passing). The device wire format is unconfirmed. See the README status
+**Status: v0.2, never run on hardware.** The host-side engine is tested
+(198 passing on 3.10, 3.12 and 3.14). The device wire format is unconfirmed. See the README status
 section before depending on this.

@@ -41,7 +41,83 @@ bezel. Reduce the font size or shorten the string.
 ## Non-Latin text is wrong
 
 Expected. `advance()` is a per-string `getlength`, which is wrong for any
-script needing contextual shaping. No BiDi, no CJK. Latin only in v0.1.
+script needing contextual shaping. No BiDi, no shaping.
+
+CJK through `glanceable.markdown` is **conserved but broken on the wrong
+boundaries**: line filling splits on whitespace, so a spaceless run is treated
+as one long word and hyphen-broken. No characters are lost — the corpus test
+pins that — but the break points are meaningless for the script. Dictionary
+breaking is a roadmap item, not a bug report.
+
+## CJK renders as empty boxes
+
+The face has no CJK glyphs. DejaVu Sans — which `find_system_font()` usually
+picks — has none, so every character comes out as `.notdef` tofu. This is not
+silent: check `metadata.unrenderable`, which lists every character the face
+could not draw.
+
+```bash
+python examples/obsidian_bridge.py --query 日本語
+#   !! page 0: face cannot draw 、 。 い が く こ … 円 形 応 性
+```
+
+Point `GLANCEABLE_FONT` at a CJK-capable face (Noto Sans CJK, Source Han Sans)
+and the tofu goes away — the *line breaking* will still be wrong, which is the
+separate limitation above.
+
+## `MarkdownDependencyError`
+
+Intentional, and the message tells you the fix: `pip install
+"glanceable[markdown]"`. Core depends only on Pillow; the markdown layer needs a
+CommonMark parser, so it is an optional extra imported lazily. `glanceable`
+itself still imports fine without it — that is why `glanceable.markdown` is not
+re-exported from `__init__.py`.
+
+## Markdown text disappeared
+
+It did not. Check all three destinations before filing a bug:
+
+```python
+page.leftover_source          # did not fit yet — request the next page
+page.metadata.dropped         # images, embeds, opaque fences, HTML, footnote refs
+page.metadata.unrenderable    # the face has no glyph for these characters
+```
+
+`unrenderable` is the one people miss. PIL draws a character the face does not
+cover as `.notdef` — frequently invisible — and raises nothing. Emoji in a
+monochrome face are the usual cause.
+
+## My frontmatter rendered as a heading
+
+Not through `glanceable.markdown`, which strips it first. If you see this, you
+are feeding source to a CommonMark parser directly: `---\ntitle: X\n---` is a
+thematic break followed by a *setext H2*, so `title: X` becomes a heading. Use
+`parse_markdown`, and read `metadata.frontmatter_raw`.
+
+Note that `metadata.frontmatter` is a flat `key: value` scan, **not** a YAML
+parse — `tags: [a, b]` arrives as the literal six-character string. Parse
+`frontmatter_raw` yourself if you need real YAML; this package will not pull in
+a YAML dependency for it.
+
+## A table turned into a list of `key: value` lines
+
+Working as intended. `key: value` is lossless only at two columns; at three or
+more it silently discards the rest. Records keep every cell and degenerate to
+exactly `key: value` when there are two columns. If you would rather lose the
+table than the lines, `Policy(table="omit")` states the omission and records the
+shape in metadata.
+
+A cell that vanishes entirely is a different thing: GFM truncates a row with
+more cells than headers *inside the parser*, before this library sees a token.
+Those are counted from the source and reported as `Dropped(kind="table-cell")`.
+
+## Code lines end with `↳`
+
+That is a continuation marker, not corruption. A code line too wide for the
+chord is broken rather than reflowed, clipped, or pushed into `leftover` —
+pushing it to leftover would make the tail reappear *after* the lines that
+followed it, which is wrong order rather than merely incomplete. Set
+`Policy(code_continuation=("↳", "\\"))` to change it.
 
 ## `TypeError: TxSprite.__init__() got an unexpected keyword argument 'x'`
 
@@ -107,7 +183,9 @@ itself will not load.
 
 ## It does not work on my actual glasses
 
-It has never been run on hardware — that is still ROADMAP item #1.
+It has never been run on hardware. That is ROADMAP item 2, under "Prove the
+bet" — second only to getting a non-Brilliant backend running, because the
+device-agnostic boundary is the claim that most needs testing.
 
 What *is* checked: the emitted payloads were validated against the real
 `brilliant_msg` 7.0.0 classes. Field names match both SDK dataclasses exactly,

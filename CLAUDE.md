@@ -189,8 +189,9 @@ discrimination, do not assume it.
   needing contextual shaping. No BiDi.
 - No glyph atlas caching; every run rasterizes fresh.
 
-`markdown.py` specifically — host-side tested (198 tests pass on 3.10, 3.12 and
-3.14), never seen by a device:
+`markdown.py` specifically — host-side tested (215 of the suite's 235 tests cover
+it: 187 unit plus 28 over the vault corpus, on 3.10, 3.12 and 3.14), never seen
+by a device:
 
 - **CJK is conserved but broken wrong.** Line filling splits on whitespace, so a
   spaceless run is one long "word" and gets hyphen-broken. No text is lost and

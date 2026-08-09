@@ -7,7 +7,7 @@ bugs already fixed, so you do not reintroduce them.
 
 ```bash
 pip install -e ".[dev]"
-pytest -q          # 198 passed
+pytest -q          # 235 passed
 ```
 
 ## The bar

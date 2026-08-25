@@ -32,6 +32,11 @@ Known limitation. `blit_coverage` writes palette indices rather than
 alpha-blending, so it is correct only over a background matching
 `palette_base`. Render on black for now.
 
+Moving the ramp with `palette_base` is not the workaround: `SpriteSurface`
+raises on a non-zero base, because `TxSprite.pack()` masks every index to the
+declared bit depth and so sends identical bytes whatever the base. Keep the ink
+ramp at the bottom of the palette.
+
 ## Words break with hyphens unexpectedly
 
 A single word wider than the chord is hyphenated rather than allowed to

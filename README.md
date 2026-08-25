@@ -49,7 +49,7 @@ the midpoint is the intuitive move and it clips descenders near the poles.
 
 ```bash
 pip install -e ".[dev]"
-pytest -q                      # 235 passed
+pytest -q                      # 252 passed
 python examples/compare.py     # regenerates docs/comparison.png
 ```
 
@@ -134,7 +134,7 @@ guarantee over every one of them.
 ## Status — v0.2, **never run on hardware**
 
 Stated plainly because the point of this project is being the implementation
-you can trust. 235 tests pass on Python 3.10, 3.12 and 3.14. All of them are
+you can trust. 252 tests pass on Python 3.10, 3.12 and 3.14. All of them are
 host-side; none of them is a device.
 
 - **The device-agnostic boundary is untested.** `PILSurface` and `SpriteSurface`
@@ -151,7 +151,8 @@ host-side; none of them is a device.
   every missing character is reported in `metadata.unrenderable`, but you need a
   CJK-capable face to read it.
 - `blit_coverage` writes palette indices rather than alpha-blending, so it is
-  correct only over a background matching `palette_base`.
+  correct only over a background matching `palette_base`. On `SpriteSurface` a
+  non-zero `palette_base` raises — the sprite wire format cannot carry it.
 - Latin only. No BiDi, no shaping. CJK is *conserved* by the markdown renderer
   but broken on the wrong boundaries — there is no dictionary breaking.
 - No glyph atlas caching; every run rasterizes fresh.

@@ -214,6 +214,23 @@ while the glass shows garbage. They are pinned in `tests/test_retained.py`.
   recovered: `SpriteSurface.present()` is a no-op and `PILSurface.present()`
   only clears `dirty`. Fixed by `RetainedSurface`, which is device-free and
   wraps either backend.
+- **Sprite coordinates were emitted 0-based.** Every Halo display primitive
+  does `if (v < 1) v = 1; v -= 1;`, so a 0-based origin lands every sprite one
+  pixel up and left — and clamps rather than shifts anything on the top or left
+  edge. `_emit` now sends `x + 1, y + 1`. The conversion lives at the wire; the
+  library's geometry stays 0-based. Found by round-tripping the bytes through
+  `brilliant_msg` 7.1.1 and halo-emulator, not by the host suite, which cannot
+  see it.
+- **`palette_base` was silently inert on the wire.** `SpriteSurface` added it
+  to each pixel index; `TxSprite.pack()` then masks each index to the declared
+  bit depth, so at `levels=4` (2bpp) base 4 sends 7 and base 12 sends 15 and
+  both arrive as 3 — *every* base produced byte-identical output while
+  `PILSurface` honoured it. The backends diverged with the suite green. Now
+  `SpriteSurface.blit_coverage` raises `ValueError` on a non-zero base. The
+  device mechanism is `bitmap()`'s `palette_offset`, but `sprite.lua`'s
+  `set_palette()` always assigns firmware entries from index 0, so an offset
+  alone points at unwritten slots; supporting it means changing the device-side
+  Lua, not this method.
 
 ### In `markdown.py` (v0.2)
 
@@ -273,16 +290,16 @@ discrimination, do not assume it.
 - **Never run on hardware.** Field shapes are verified field-for-field against
   `brilliant_msg` 7.1.1 — `SpritePayload` against `TxSprite`, `SpriteCoords`
   against `TxSpriteCoords`, both in declaration order — so `asdict()` splats
-  cleanly. What remains unconfirmed is the **x/y origin**: `sprite_coords.lua`
-  only parses the fields, and what they mean is decided by the app-side Lua
-  that calls `frame.display.bitmap`, which is 1-based on Halo. `TxSpriteCoords`
-  documents x as 1..640 — Frame's panel again, the same stale bound as
-  `TxPlainText`. Needs a device.
+  cleanly. The **x/y origin** is settled as far as host tooling can settle it:
+  coordinates go out 1-based, matching `frame.display.bitmap`, verified by
+  round-tripping through `brilliant_msg` 7.1.1 and halo-emulator. An emulator
+  is not glass — this still wants a device before anyone calls it confirmed.
 - `RetainedSurface` is host-verified against both backends. Whether a
   damaged-region update is imperceptible on real glass is a hardware question.
 - No device-side Lua counterpart yet.
 - `blit_coverage` writes palette indices rather than alpha-blending, so it is
-  correct only over a background matching `palette_base`.
+  correct only over a background matching `palette_base`. On `SpriteSurface` a
+  non-zero `palette_base` raises: the wire format cannot carry it.
 - Latin only. `advance()` is a per-string `getlength`, wrong for any script
   needing contextual shaping. No BiDi.
 - No glyph atlas caching; every run rasterizes fresh.

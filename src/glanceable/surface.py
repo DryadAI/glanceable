@@ -112,10 +112,13 @@ class SpriteCoords:
     `code` binds this to its payload; it is an unsigned byte. `offset` is a
     palette offset in 0..15.
 
-    UNCONFIRMED: x/y are emitted 0-based, matching this library's geometry,
-    while the SDK documents 1..640 -- Frame's panel again, the same stale bound
-    as TxPlainText. A one-pixel origin shift will not be settled by reading the
-    SDK; it needs a physical Halo.
+    x/y are emitted **1-based**. Halo's display primitives all do
+    `if (v < 1) v = 1; v -= 1;`, so a 0-based origin lands every sprite one
+    pixel up and left. The conversion from this library's 0-based geometry
+    happens in SpriteSurface._emit, at the wire and nowhere above it.
+
+    Confirmed by round-tripping these bytes through brilliant_msg 7.1.1 and
+    halo-emulator. Not yet seen on physical glass.
     """
 
     code: int
@@ -187,10 +190,11 @@ class SpriteSurface(Surface):
     Pixels stay one byte per pixel here. TxSprite.pack() does the bit packing
     (_pack_1bit/_pack_2bit/_pack_4bit); pre-packing would double-encode.
 
-    STILL UNCONFIRMED, and not resolvable by reading the SDK: the x/y origin.
-    sprite_coords.lua only parses the fields -- what they mean is decided by
-    the app-side Lua that calls frame.display.bitmap, which is 1-based on Halo.
-    TxSpriteCoords documents x as 1..640, Frame's panel. Needs a device.
+    Coordinates go out 1-based, because frame.display.bitmap is 1-based on
+    Halo and clamps anything below 1 up to 1 before subtracting. See _emit.
+
+    palette_base is not supported here and raises; see blit_coverage for why
+    the device has no equivalent of it.
     """
 
     def __init__(
@@ -247,7 +251,14 @@ class SpriteSurface(Surface):
                     palette_data=self._palette,
                     pixel_data=pixels,
                 ),
-                coords=SpriteCoords(code=self._next_code(), x=x, y=y),
+                # +1: every Halo display primitive is 1-based and does
+                # `if (v < 1) v = 1; v -= 1;` internally, so passing this
+                # library's 0-based geometry straight through lands each
+                # sprite one pixel up and left -- and silently clamps, rather
+                # than shifts, anything at the very top or left edge. The
+                # conversion belongs here, at the wire, so nothing above
+                # surface.py has to know the device counts from one.
+                coords=SpriteCoords(code=self._next_code(), x=x + 1, y=y + 1),
             )
         )
 
@@ -271,8 +282,29 @@ class SpriteSurface(Surface):
     def blit_coverage(
         self, coverage: Image.Image, x: int, y: int, palette_base: int, levels: int
     ) -> None:
+        # A non-zero palette_base cannot survive the wire, and fails silently
+        # if allowed through. TxSprite.pack() masks every index down to the
+        # declared bit depth, so at levels=4 (2bpp) base=4 emits index 7 and
+        # base=12 emits 15, and both arrive as 3: every base produces byte-
+        # identical output. PILSurface honours the base, so the two backends
+        # would diverge with the host suite still green -- the exact failure
+        # shape rule 1 exists to catch.
+        #
+        # The device mechanism for shifting a sprite's colours is bitmap()'s
+        # palette_offset, carried on SpriteCoords.offset. But it is not a
+        # substitute: sprite.lua's set_palette() always assigns firmware
+        # entries starting at index 0, so an offset on its own just points at
+        # slots nothing has written. Wiring it up means changing what the
+        # device-side Lua loads, not what this method emits.
+        if palette_base != 0:
+            raise ValueError(
+                f"SpriteSurface cannot express palette_base={palette_base}: "
+                "TxSprite.pack() masks indices to the declared bit depth, so "
+                "every palette_base sends identical bytes. Use palette_base=0 "
+                "and place the ramp at the bottom of the palette."
+            )
         step = 255 / (levels - 1)
-        idx = coverage.point(lambda p: palette_base + min(levels - 1, int(round(p / step))))
+        idx = coverage.point(lambda p: min(levels - 1, int(round(p / step))))
         self._emit(coverage.width, coverage.height, bytes(idx.tobytes()), x, y)
 
     def present(self) -> None:

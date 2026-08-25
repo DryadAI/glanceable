@@ -6,6 +6,11 @@ lacking this context, produced 800 lines of unverified widgets under a
 different name with an animation framework that contradicts the core design
 principle. Constraints belong in the repo, not in one conversation's memory.
 
+It only works if it is read. A later session reviewed `SpriteSurface`, concluded
+Halo could not receive sprites at all, and proposed deleting it — contradicting
+a finding recorded in this file three sections down. Two backends were written
+against the wrong premise before anyone opened this. Read it first.
+
 ## What this is
 
 A layout and typography engine for round, glanceable near-eye displays.
@@ -21,10 +26,17 @@ Module map, bottom to top:
 |---|---|---|
 | `geometry.py` | — | chord solver |
 | `surface.py` | Pillow | the device boundary; see rule 1 |
+| `damage.py` | — | rectangles and frame diffing; device-free |
+| `retained.py` | damage, surface | damage repaint over any backend |
 | `typography.py` | geometry | metrics, chord-aware wrap, rasterization |
 | `fonts.py` | — | cross-platform face discovery |
 | `render.py` | all of the above | `render_text` convenience |
 | `markdown.py` | typography, geometry, surface | markdown → circular display |
+
+`damage.py` is named apart from `geometry.py` deliberately: one is the shape of
+the glass, the other is what changed since the last frame. `retained.py` wraps a
+`Surface` and is itself a `Surface`, so it contains no device call and sits
+above the boundary without breaking rule 1.
 
 `markdown.py` is a *renderer*, not a widget: it turns document structure into
 `GlyphRun`s on the same grid everything else uses. It is the only module with an
@@ -77,7 +89,9 @@ optional dependency, and it is deliberately not re-exported from
 
 ## Verified facts about the Brilliant SDK
 
-Established by reading `brilliant-msg` 7.0.0 from PyPI, not from memory:
+Established by reading `brilliant-msg` 7.1.1 from source, not from memory.
+7.1.0 was explicitly a "True-up against Halo firmware 0.8.8" — the SDK is
+being tracked against the same firmware revision this project reads.
 
 - `TxTextSpriteBlock` rasterizes TTF host-side via PIL and ships sprites. The
   primitive is sound; the typography is not.
@@ -93,7 +107,59 @@ Established by reading `brilliant-msg` 7.0.0 from PyPI, not from memory:
 - Nothing in the SDK knows the display is round. Zero occurrences of circle,
   radius, or a 256 display bound.
 - Halo *is* a first-class sprite target: `sprite.lua` notes "Frame indexes are
-  the color names, Halo indexes are 0-15". 16-colour palettes work.
+  the color names, Halo indexes are 0-15". 16-colour palettes work. Its
+  `set_palette()` branches on `frame.HARDWARE_VERSION` and renders through
+  `frame.display.bitmap`. Sprites were never a firmware primitive on *either*
+  device — they are device-side Lua the SDK ships. Grepping `halo-firmware` for
+  "sprite" returns nothing, and that fact proves nothing about Halo support.
+- The wire format changed at 6.0.0: a `compressed` flag byte was inserted at
+  header offset 5, shifting `bpp` to 6 and `num_colors` to 7. `TxSprite.pack()`
+  emits `>HHBBB` = width, height, compress, bpp, num_colors, and `sprite.lua`
+  parses those positions. Frame code written against a pre-6.0.0 header will
+  desynchronise; the field is already carried on `SpritePayload`.
+- `bpp` is derived inside `pack()` from `num_colors`, not supplied. Pixels go
+  in one byte per index; `_pack_1bit`/`_pack_2bit`/`_pack_4bit` do the packing.
+  Pre-packing double-encodes.
+- `msg_code` is applied by `BrilliantMsg.send_message()` at send time and is
+  correctly absent from both message dataclasses.
+- `sprite.lua` slices the palette as exactly `num_colors * 3` bytes and takes
+  everything after it as pixel data. Palette length is load-bearing.
+
+## Verified facts about Halo firmware (0.8.8)
+
+Read from `modules/halo/src/lua_display.c` and `applications/halo/PROTOCOL.md`.
+
+- `frame.display.show()` is a **registered no-op**, kept for Frame
+  compatibility. There is no double buffer — the canvas binds directly to the
+  CDC200 layer framebuffer, so draws land in the buffer being scanned out. A
+  clear-and-repaint is a full-field luminance transient, which is rule 2's
+  failure mode arriving through the back door. This is documented on
+  docs.brilliant.xyz; it is not a gap.
+- `display.clear()` writes 196KB into live scanout. Once at startup, never per
+  frame.
+- All display primitives are **1-based** and subtract 1 internally.
+  `text`/`rect`/`line`/`char`/`bitmap` clamp inputs below 1 up to 1 *before*
+  subtracting, so an off-screen origin is shifted rather than cropped.
+  `circle` and `polygon` do not clamp and handle negatives correctly.
+- `display.bitmap(x, y, width, color_format, palette_offset, data, [opts])`.
+  `color_format` is the colour count: 2 → 1bpp, 4 → 2bpp, 16 → 4bpp, 0 →
+  RGB888 direct. **Source index 0 is always transparent regardless of offset**,
+  which is exactly what `PILSurface.blit_coverage`'s mask does — both are
+  indexed-with-transparent-zero.
+- `palette_offset` shifts linearly and never wraps; an index pushed past 15 is
+  skipped.
+- Display fonts are `Dogica8px` and `DogicaBold8px` only, stored at 8px and
+  integer-scaled; `set_font` requires a multiple of 8. These are the *device
+  text primitive's* fonts and are irrelevant to this library, which rasterizes
+  TTF host-side and ships pixels. Do not import their metrics.
+- `frame.display.char()` is documented as taking a Unicode codepoint, with
+  `char(0x2665)` — a heart — as the example. Only the two Dogica faces are
+  registered. If those are ASCII-only that example cannot render. Reported to
+  Brilliant Labs.
+- Binary transfer is `frame.bluetooth.receive_callback` / `max_length()` /
+  `send()` over the data channel (marker `0x01`). MTU is 512; `max_length()`
+  returns MTU−1. Lua string escaping costs 4 chars/byte, so pixel data over the
+  REPL would need roughly 3× the writes — it belongs on the data channel.
 
 ## The core geometric claim
 
@@ -123,6 +189,31 @@ Each has a named regression test. If you touch `typography.py`, run them.
 - **A test that could not fail.** The surface-agreement test compared
   `SpriteSurface` against a recomputation that ignored the PIL surface
   entirely. Both op logs are now compared directly.
+
+### In `surface.py` (sprite wire format)
+
+Found by diffing against `brilliant_msg` 7.1.1 source. None of these can fail
+host-side — `PILSurface` never reads `palette_data` — so the suite stays green
+while the glass shows garbage. They are pinned in `tests/test_retained.py`.
+
+- **Palette length desynchronised the device parser.** The full palette was
+  sent regardless of `num_colors`. `sprite.lua` reads `num_colors * 3` bytes
+  and treats the remainder as pixels, so any mismatch shifts every pixel in the
+  frame. `ramp_palette(4)` happens to be exactly 12 bytes, which is the only
+  reason this was not already visible. It would present as a wire-format
+  problem, not a palette-length one.
+- **Sprite codes collided after 224 draws.** `_next_code()` derived from
+  `len(self.ops)`, and `present()` never clears the log, so codes ran past
+  `0xFF` and wrapped onto sprites still live on the device. Now cycles within
+  `base_code..0xFF`, with `reset_codes()` for a cleared display.
+- **`num_colors` could be a value the packer cannot express.**
+  `max(2, len(palette) // 3)` yields e.g. 5, which `pack()` encodes as 4bpp
+  while declaring 5. Now rounded to {2, 4, 16}, rejected above 16.
+- **Nothing ever erased.** `blit_coverage` writes ink through a mask, so a
+  re-rendered shorter line left the previous tail on the glass. Neither backend
+  recovered: `SpriteSurface.present()` is a no-op and `PILSurface.present()`
+  only clears `dirty`. Fixed by `RetainedSurface`, which is device-free and
+  wraps either backend.
 
 ### In `markdown.py` (v0.2)
 
@@ -179,9 +270,16 @@ discrimination, do not assume it.
 
 ## Honest status
 
-- **Never run on hardware.** `SpriteSurface` emits against published
-  `brilliant_msg` 7.0.0 shapes but has not been round-tripped on a physical
-  Halo. Treat the wire format as unconfirmed.
+- **Never run on hardware.** Field shapes are verified field-for-field against
+  `brilliant_msg` 7.1.1 — `SpritePayload` against `TxSprite`, `SpriteCoords`
+  against `TxSpriteCoords`, both in declaration order — so `asdict()` splats
+  cleanly. What remains unconfirmed is the **x/y origin**: `sprite_coords.lua`
+  only parses the fields, and what they mean is decided by the app-side Lua
+  that calls `frame.display.bitmap`, which is 1-based on Halo. `TxSpriteCoords`
+  documents x as 1..640 — Frame's panel again, the same stale bound as
+  `TxPlainText`. Needs a device.
+- `RetainedSurface` is host-verified against both backends. Whether a
+  damaged-region update is imperceptible on real glass is a hardware question.
 - No device-side Lua counterpart yet.
 - `blit_coverage` writes palette indices rather than alpha-blending, so it is
   correct only over a background matching `palette_base`.
@@ -189,9 +287,9 @@ discrimination, do not assume it.
   needing contextual shaping. No BiDi.
 - No glyph atlas caching; every run rasterizes fresh.
 
-`markdown.py` specifically — host-side tested (215 of the suite's 235 tests cover
-it: 187 unit plus 28 over the vault corpus, on 3.10, 3.12 and 3.14), never seen
-by a device:
+`markdown.py` specifically — host-side tested (215 of the suite's markdown tests
+cover it: 187 unit plus 28 over the vault corpus, on 3.10, 3.12 and 3.14), never
+seen by a device:
 
 - **CJK is conserved but broken wrong.** Line filling splits on whitespace, so a
   spaceless run is one long "word" and gets hyphen-broken. No text is lost and

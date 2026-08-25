@@ -142,7 +142,12 @@ def test_pil_and_sprite_surfaces_receive_identical_ops():
     la = render_text(a, f, LOREM, levels=4)
     lb = render_text(b, f, LOREM, levels=4)
     assert len(la) == len(lb) > 0
-    assert a.ops == [(o.x, o.y, o.width, o.height) for o in b.ops]
+    # The two backends now record deliberately different coordinate spaces:
+    # PILSurface is host-side and 0-based, SpriteSurface emits the 1-based
+    # coordinates Halo's display primitives expect. Undoing the -1 here is the
+    # only way this comparison passes, so moving the wire origin breaks this
+    # test loudly rather than quietly re-agreeing at the wrong offset.
+    assert a.ops == [(o.x - 1, o.y - 1, o.width, o.height) for o in b.ops]
 
 
 # --- regressions: bugs found in the v0.1 audit ------------------------------

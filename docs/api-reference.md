@@ -58,7 +58,7 @@ Iterable and indexable; `len()` gives the line count.
 |---|---|
 | `size` | `(w, h)` |
 | `fill_rect(x, y, w, h, color_index)` | |
-| `blit_coverage(coverage, x, y, palette_base, levels)` | writes palette indices; **not** alpha-blended |
+| `blit_coverage(coverage, x, y, palette_base, levels)` | writes palette indices; **not** alpha-blended. `SpriteSurface` raises `ValueError` on a non-zero `palette_base` — the sprite wire format cannot carry it |
 | `present()` | flush; no double buffer exists on device |
 
 Implementations: `PILSurface(width, height, palette)` — adds `to_rgb()`,

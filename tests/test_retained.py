@@ -113,6 +113,23 @@ def test_pixel_data_stays_one_byte_per_pixel():
     assert len(s.ops[0].payload.pixel_data) == 12
 
 
+def test_sprite_surface_rejects_a_non_zero_palette_base():
+    """A base SpriteSurface cannot express must not be accepted silently.
+
+    TxSprite.pack() masks every index to the declared bit depth, so at
+    levels=4 (2bpp) base=4 emits 7 and base=12 emits 15 and both arrive as 3 --
+    every base produces byte-identical output. PILSurface honours the base, so
+    accepting one here diverges the backends with the host suite still green.
+    """
+    s = SpriteSurface(256, 256, PALETTE)
+    with pytest.raises(ValueError, match="palette_base"):
+        s.blit_coverage(coverage(16, 16), 0, 0, 4, 4)
+    assert s.ops == [], "a rejected blit must not half-emit"
+
+    s.blit_coverage(coverage(16, 16), 0, 0, 0, 4)
+    assert len(s.ops) == 1, "palette_base=0 is still the supported path"
+
+
 # -- retained mode over both backends -------------------------------------
 
 
@@ -169,8 +186,13 @@ def test_both_backends_agree_on_op_geometry():
         s.blit_coverage(coverage(64, 18), 12, 40, 0, 4)
         s.present()
 
+    # -1 on the sprite side: the backends agree on *extent*, not on origin
+    # numbering. PILSurface stays in this library's 0-based host geometry;
+    # SpriteSurface converts to the 1-based coordinates every Halo display
+    # primitive takes. The subtraction is the assertion that the wire is
+    # exactly one greater -- change the origin and this fails.
     assert [(o[0], o[1], o[2], o[3]) for o in pil.ops] == [
-        (o.x, o.y, o.width, o.height) for o in spr.ops
+        (o.x - 1, o.y - 1, o.width, o.height) for o in spr.ops
     ]
 
 

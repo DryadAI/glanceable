@@ -172,22 +172,70 @@ class SpriteSurface(Surface):
     bytes, so they wrap at 256. Which codes are safe to use is the application's
     business -- the SDK does not reserve a range.
 
-    NOTE: field shapes are checked against the published brilliant_msg 7.0.0
-    classes, but this has NOT been run on hardware. Treat the wire format as
-    unconfirmed until it has been round-tripped on a physical Halo.
+    Field shapes are verified field-for-field against brilliant_msg 7.1.1:
+    SpritePayload matches TxSprite (width, height, num_colors, palette_data,
+    pixel_data, compress) and SpriteCoords matches TxSpriteCoords (code, x, y,
+    offset), both in declaration order, so asdict() splats cleanly. msg_code is
+    applied by BrilliantMsg.send_message() at send time and correctly absent
+    from both.
+
+    Halo is supported: brilliant_msg ships device-side sprite.lua whose
+    set_palette() branches on frame.HARDWARE_VERSION, using integer palette
+    indices 0-15 on Halo against colour names on Frame, then renders through
+    frame.display.bitmap.
+
+    Pixels stay one byte per pixel here. TxSprite.pack() does the bit packing
+    (_pack_1bit/_pack_2bit/_pack_4bit); pre-packing would double-encode.
+
+    STILL UNCONFIRMED, and not resolvable by reading the SDK: the x/y origin.
+    sprite_coords.lua only parses the fields -- what they mean is decided by
+    the app-side Lua that calls frame.display.bitmap, which is 1-based on Halo.
+    TxSpriteCoords documents x as 1..640, Frame's panel. Needs a device.
     """
 
     def __init__(
         self, width: int, height: int, palette: list[int], base_code: int = 0x20
     ):
         self._size = (width, height)
-        self._palette = bytes(palette)
-        self._num_colors = max(2, len(palette) // 3)
+
+        # TxSprite.pack() buckets bpp by num_colors (<=2 -> 1bpp, <=4 -> 2bpp,
+        # else 4bpp) and the device-side sprite.lua slices the palette as
+        # exactly num_colors*3 bytes, treating everything after as pixel data.
+        # An unrounded count would desynchronise that slice.
+        supplied = max(2, len(palette) // 3)
+        self._num_colors = 2 if supplied <= 2 else 4 if supplied <= 4 else 16
+        if supplied > 16:
+            raise ValueError(
+                f"palette holds {supplied} colours; the sprite format caps at 16"
+            )
+
+        # Truncate to the declared count. sprite.lua reads the palette as
+        # string.sub(data, 8, 8 + num_colors*3 - 1) and takes the remainder as
+        # pixels, so a longer palette shifts every pixel and corrupts the frame.
+        # brilliant_msg's own from_indexed_png_bytes truncates the same way.
+        self._palette = bytes(palette[: self._num_colors * 3]).ljust(
+            self._num_colors * 3, b"\x00"
+        )
+
         self._base_code = base_code
+        self._code_seq = 0
         self.ops: list[SpriteOp] = []
 
     def _next_code(self) -> int:
-        return (self._base_code + len(self.ops)) & 0xFF
+        """Per-sprite identifier, cycling within the byte range above base.
+
+        Previously derived from len(self.ops), which never resets because
+        present() does not clear the log -- so codes wrapped past 0xFF and
+        collided with sprites still live on the device.
+        """
+        span = 0x100 - self._base_code
+        code = self._base_code + (self._code_seq % span)
+        self._code_seq += 1
+        return code
+
+    def reset_codes(self) -> None:
+        """Restart code allocation. Call when the device display is cleared."""
+        self._code_seq = 0
 
     def _emit(self, w: int, h: int, pixels: bytes, x: int, y: int) -> None:
         self.ops.append(
@@ -229,3 +277,4 @@ class SpriteSurface(Surface):
 
     def present(self) -> None:
         pass
+

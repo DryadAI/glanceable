@@ -5,7 +5,7 @@ A layout and typography engine for round, glanceable near-eye displays.
 Developed against Brilliant Labs Halo's 256×256 circular microOLED. Nothing
 above `surface.py` contains a Halo-specific call.
 
-![stock vs glanceable](docs/comparison.png)
+![stock vs glanceable](https://raw.githubusercontent.com/DryadAI/glanceable/main/docs/comparison.png)
 
 ## Why
 
@@ -17,8 +17,8 @@ under-specified.
 passes `\n`. The middle panel above does exactly that, and it is perfectly
 usable. The honest gap is narrower than "the SDK is broken" — measured on the
 sample string at 13px, `glanceable` fits the same text in 4 lines instead of 5
-and uses 16% more width (223px vs 193px), because the equator chord is 238px
-while the largest inscribed rectangle is only 170px.
+and uses 16% more width (223px vs 193px), because the equator chord is 240px
+while the largest inscribed square is only 169px.
 
 Verified against `brilliant-msg` 7.0.0:
 
@@ -45,11 +45,43 @@ horizontal edges sits farther from the equator — **not** by its midpoint. Usin
 the midpoint is the intuitive move and it clips descenders near the poles.
 `test_line_width_uses_narrow_edge_not_midpoint` pins this.
 
+![chord-aware wrap vs the largest inscribed rectangle](https://raw.githubusercontent.com/DryadAI/glanceable/main/docs/chord-vs-inscribed.png)
+
+Left is `glanceable`. Right is the same text, same face, same size, wrapped to
+the largest inscribed square — what a rectangular layout engine does when you
+point it at a circle. Both are centred on their widest band. The right-hand
+panel runs out of budget mid-sentence.
+
+How much that is worth depends on the line budget, and the tighter the budget
+the more it matters — a longer block puts more of its lines near the poles
+where the chord is narrow:
+
+| line budget | chord-aware | inscribed square | gain |
+|---|---|---|---|
+| 3 | 97 chars | 49 | +98% |
+| 4 | 125 | 72 | +74% |
+| 5 | 154 | 95 | +62% |
+| 6 | 185 | 121 | +53% |
+
+DejaVu Sans 13px on Halo's 256×256 with an 8px safe inset. Equator chord 240px;
+largest inscribed square 169px. Regenerate with `python tools/comparison.py`,
+re-measure with `python tools/measure_table.py`.
+
+Identical to four decimal places on Python 3.10.20, 3.12.3 and 3.14.4 — the
+interpreter is not a variable. What *would* move these is FreeType or the
+DejaVu build, since the counts come out of font rasterization, and all three
+runs shared Pillow 12.3.0 and FreeType 2.14.3. So `tests/test_circular_claim.py`
+asserts the geometry exactly and the typography as floors, rather than letting
+this table drift from the code the way earlier figures here did.
+
+A glanceable display is read in a second or two, so a small fixed line budget
+*is* the design constraint — the regime where this gap is widest.
+
 ## Install
 
 ```bash
 pip install -e ".[dev]"
-pytest -q                      # 252 passed
+pytest -q                      # 273 passed  (268 + 1 skip without dev extras)
 python examples/compare.py     # regenerates docs/comparison.png
 ```
 
@@ -134,7 +166,8 @@ guarantee over every one of them.
 ## Status — v0.2, **never run on hardware**
 
 Stated plainly because the point of this project is being the implementation
-you can trust. 252 tests pass on Python 3.10, 3.12 and 3.14. All of them are
+you can trust. 273 tests pass on Python 3.10.20, 3.12.3 and 3.14.4 with the
+dev extras installed; 268 pass and the emulator round-trip skips without them. All of them are
 host-side; none of them is a device.
 
 - **The device-agnostic boundary is untested.** `PILSurface` and `SpriteSurface`

@@ -2,8 +2,37 @@
 
 ## 0.2.0 — unreleased
 
-`glanceable.markdown`: markdown → circular display. Still host-side only;
-**never run on hardware.** 235 tests pass on Python 3.10, 3.12 and 3.14.
+### Added
+
+- `MonoSurface` — a 1-bit backend with no palette, written as evidence for the
+  `Surface` ABC. The three verbs survive it; `palette_base` and `levels` do
+  not, which is the second independent line of evidence that the colour
+  parameters are misplaced. Not a device driver.
+- `tests/test_emulator_roundtrip.py` — drives `SpriteSurface`'s bytes through
+  Brilliant's own `sprite.lua` inside `halo-emulator` and compares the
+  framebuffer against `PILSurface`. Skips without the dev extras.
+- `tests/test_circular_claim.py` — asserts the README's line-budget claim in
+  code: geometry exactly, typography as floors. Six documents here have carried
+  a figure that drifted from the run that produced it; this stops the table
+  joining them.
+- `tools/comparison.py` and `tools/measure_table.py` — regenerate the figure
+  and the table.
+
+### Fixed
+
+- Equator chord corrected from 238px to **240px** in README, CLAUDE.md and
+  `docs/core-concepts.md`; inscribed square 170px → **169px**. 238 matched
+  nothing measurable — the widest usable *line box* is 236–239px depending on
+  line height and placement, and the chord is `2 × usable_radius`. Same failure
+  mode as the 198 → 235 test-count commit.
+- README image paths made absolute. They were relative, which renders on GitHub
+  and breaks on PyPI — both figures, including the one that is the pitch, would
+  have been broken images on the project page.
+
+`glanceable.markdown`: markdown → circular display. The sprite path is now
+**validated against the emulator, not hardware** — see Fixed below. 273 tests
+pass on Python 3.10.20, 3.12.3 and 3.14.4 with the dev extras; 268 without,
+where the emulator round-trip skips.
 
 ### Added
 - `parse_markdown(source, policy) -> MarkdownDoc` — pure, needs no font or

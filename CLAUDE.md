@@ -26,6 +26,7 @@ Module map, bottom to top:
 |---|---|---|
 | `geometry.py` | — | chord solver |
 | `surface.py` | Pillow | the device boundary; see rule 1 |
+| `mono.py` | surface | 1-bit backend; ABC evidence, not a driver |
 | `damage.py` | — | rectangles and frame diffing; device-free |
 | `retained.py` | damage, surface | damage repaint over any backend |
 | `typography.py` | geometry | metrics, chord-aware wrap, rasterization |
@@ -170,8 +171,8 @@ midpoint is the intuitive move and it clips descenders near the poles.
 Pinned by `test_line_width_uses_narrow_edge_not_midpoint`.
 
 Scale of the win, measured at 13px on the sample string: 4 lines instead of 5,
-223px vs 193px of width. The equator chord is 238px; the largest inscribed
-rectangle is 170px. Worth roughly a third of the glass — real, but not
+223px vs 193px of width. The equator chord is 240px; the largest inscribed
+square is 169px. Worth roughly a third of the glass — real, but not
 "the SDK is broken."
 
 ## Bugs already found and fixed — do not reintroduce
@@ -286,6 +287,24 @@ discrimination, do not assume it.
   split a list item across a page. Corpora of real-shaped input earn their keep.
 
 ## Honest status
+
+- **The three verbs survived a panel with no palette.** `render_text` and
+  `render_markdown` run unmodified onto `MonoSurface` (1-bit, no palette),
+  the chord invariant holds, and `RetainedSurface` composes with a backend
+  written after it — nothing above `surface.py` changed. First real evidence
+  for rule 1's bet, from a direction no Brilliant device could provide. Still
+  the same author, so ROADMAP item 1 stays open.
+- **The palette parameters are misplaced in the ABC**, on two independent
+  lines of evidence. `SpriteSurface` raises on `palette_base != 0` because the
+  index cannot survive bit-depth masking on pack; `MonoSurface` cannot honour
+  it at all, and records it as discarded. Different devices, different
+  failures, same cause. Do **not** "fix" either by making the path ignore the
+  base silently — that is the bug it replaced. ROADMAP item 3.
+- **`xg-glass-sdk` cannot validate the ABC.** Its display API is
+  `display(text)` and `displayImage(png_bytes)` — whole frames, not draw ops —
+  so a backend for it is `PILSurface.to_rgb()` plus an encode. Its simulator is
+  an Android Emulator. Do not spend a session on it expecting proof it cannot
+  yield.
 
 - **Never run on hardware.** Field shapes are verified field-for-field against
   `brilliant_msg` 7.1.1 — `SpritePayload` against `TxSprite`, `SpriteCoords`

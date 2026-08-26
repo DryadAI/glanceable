@@ -6,7 +6,7 @@
 git clone https://github.com/DryadAI/glanceable
 cd glanceable
 pip install -e ".[dev]"
-pytest -q            # expect: 252 passed
+pytest -q            # expect: 273 passed  (268 + 1 skip without dev extras)
 ```
 
 ## Render your first frame

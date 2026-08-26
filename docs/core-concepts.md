@@ -8,8 +8,8 @@ engine ever written assumes a rectangle.
 Two ways to get this wrong:
 
 - **Wrap to the inscribed rectangle.** Safe, but the largest rectangle fitting
-  inside the usable circle is only 170px wide, while the widest line across the
-  middle is 238px. You throw away about a third of the glass.
+  inside the usable circle is only 169px wide, while the widest line across the
+  middle is 240px. You throw away about a third of the glass.
 - **Wrap to the bounding box.** Uses the full 256px, and clips against the
   curve near the top and bottom.
 

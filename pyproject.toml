@@ -9,12 +9,28 @@ description = "Layout and typography engine for round, glanceable near-eye displ
 readme = "README.md"
 requires-python = ">=3.10"
 license = { file = "LICENSE" }
-keywords = ["smart-glasses", "hud", "typography", "circular-display", "wearable"]
+keywords = [
+  "smart-glasses", "hud", "typography", "circular-display", "round-display",
+  "near-eye-display", "wearable", "brilliant-labs", "halo", "frame",
+  "layout-engine", "text-wrapping", "oled", "epaper", "microoled",
+  "heads-up-display", "ar-glasses", "markdown",
+]
 classifiers = [
   "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
   "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
   "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
   "Topic :: Multimedia :: Graphics",
+  "Topic :: Multimedia :: Graphics :: Presentation",
+  "Topic :: Software Development :: Libraries :: Python Modules",
+  "Topic :: Text Processing :: Fonts",
+  "Typing :: Typed",
 ]
 dependencies = ["pillow>=10.0"]
 
@@ -23,11 +39,14 @@ dependencies = ["pillow>=10.0"]
 # markdown do not pay for a parser. markdown-it-py is pure Python (~240KB) with
 # one small dependency (mdurl) and the same >=3.10 floor as this package.
 markdown = ["markdown-it-py>=3.0"]
-dev = ["pytest>=7.0", "markdown-it-py>=3.0"]
+dev = ["pytest>=7.0", "markdown-it-py>=3.0", "lupa>=2.0", "halo-emulator", "brilliant-msg>=7.1.1"]
 
 [project.urls]
 Homepage = "https://github.com/DryadAI/glanceable"
+Documentation = "https://github.com/DryadAI/glanceable#readme"
+Repository = "https://github.com/DryadAI/glanceable"
 Issues = "https://github.com/DryadAI/glanceable/issues"
+Changelog = "https://github.com/DryadAI/glanceable/blob/main/CHANGELOG.md"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/glanceable"]

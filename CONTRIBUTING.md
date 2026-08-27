@@ -10,6 +10,18 @@ pip install -e ".[dev]"
 pytest -q          # 273 passed  (268 + 1 skip without dev extras)
 ```
 
+**The dev extras do not install on Python 3.14.** `brilliant-msg` requires
+`brilliant-ble`, which pins `bleak<1.0.0`, and no `bleak` below 1.0 supports
+3.14 — the resolver fails with `No matching distribution found for
+bleak<1.0.0,>=0.22.3`. It is a transitive pin two levels down, so there is
+nothing to do here but wait for it. Use 3.10-3.13 for the full 273; the 273
+figure above was measured on CPython 3.12.13.
+
+The core suite is Pillow-only and runs on every supported version, 3.14
+included, giving 268 passed plus 1 skip — the skip is
+`tests/test_emulator_roundtrip.py`, which needs the extras. Nothing outside
+that file depends on them.
+
 ## The bar
 
 - **Every behavioural change needs a test**, named after the behaviour.
